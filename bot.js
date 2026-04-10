@@ -2,49 +2,20 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const cron = require('node-cron');
 const Anthropic = require('@anthropic-ai/sdk');
-const Parser = require('rss-parser');
 require('dotenv').config();
 
 // Configuration
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const chatId = process.env.TELEGRAM_CHAT_ID;
 const anthropicKey = process.env.ANTHROPIC_API_KEY;
+const mediastackApiKey = process.env.MEDIASTACK_API_KEY;
 
 // Initialize clients
 const bot = new TelegramBot(token, { polling: true });
 const client = new Anthropic({ apiKey: anthropicKey });
-const parser = new Parser();
 
 // Store sent news
 const sentNews = new Set();
-
-// Working RSS feeds with Israel/Middle East coverage
-const newsSources = [
-  {
-    name: '🌍 BBC World',
-    url: 'http://feeds.bbc.co.uk/news/world/rss.xml'
-  },
-  {
-    name: '🌐 Al Jazeera',
-    url: 'https://www.aljazeera.com/xml/rss/all.xml'
-  },
-  {
-    name: '📺 CNN World',
-    url: 'http://rss.cnn.com/rss/cnn_world.rss'
-  },
-  {
-    name: '🗞️ The Guardian',
-    url: 'https://www.theguardian.com/international/rss'
-  },
-  {
-    name: '📰 Reuters World',
-    url: 'http://feeds.reuters.com/reuters/worldNews'
-  },
-  {
-    name: '🔔 Middle East Eye',
-    url: 'https://www.middleeasteye.net/feed'
-  }
-];
 
 // Keywords to filter news about Israel
 const israelKeywords = [
@@ -125,20 +96,27 @@ async function summarizeArticle(title, description) {
   }
 }
 
-async function fetchRSSNews(source) {
+async function fetchMediaStackNews() {
   try {
-    log(`📡 Fetching ${source.name}...`);
+    log(`📡 Fetching news from MediaStack API...`);
 
-    const feed = await parser.parseURL(source.url);
+    const response = await axios.get('https://api.mediastack.com/v1/news', {
+      params: {
+        keywords: 'israel,palestine,gaza,hamas,hezbollah,jerusalem,lebanon,iran',
+        languages: 'en',
+        limit: 50,
+        access_key: mediastackApiKey
+      }
+    });
 
-    if (!feed.items || feed.items.length === 0) {
-      log(`⚠️ No items: ${source.name}`);
+    if (!response.data.data || response.data.data.length === 0) {
+      log(`⚠️ No articles found`);
       return [];
     }
 
     const articles = [];
-    for (const item of feed.items.slice(0, 5)) {
-      const title = item.title || item.description || '';
+    for (const item of response.data.data.slice(0, 20)) {
+      const title = item.title || '';
       if (!title) continue;
 
       // Filter - only articles about Israel
@@ -146,39 +124,32 @@ async function fetchRSSNews(source) {
         continue;
       }
 
-      const hash = generateNewsHash(title, source.name);
+      const hash = generateNewsHash(title, 'MediaStack');
       if (!sentNews.has(hash)) {
         articles.push({
           title: title.substring(0, 150),
-          description: item.description || item.content || '',
-          link: item.link || '',
-          source: source.name,
+          description: item.description || '',
+          link: item.url || '',
+          source: '📰 MediaStack',
           hash
         });
       }
     }
 
     if (articles.length > 0) {
-      log(`✅ Found ${articles.length} articles from ${source.name}`);
+      log(`✅ Found ${articles.length} articles`);
     }
 
     return articles;
   } catch (error) {
-    log(`Error ${source.name}: ${error.message}`);
+    log(`Error fetching from MediaStack: ${error.message}`);
     return [];
   }
 }
 
 async function fetchAllNews() {
-  const allNews = [];
-
-  for (const source of newsSources) {
-    const articles = await fetchRSSNews(source);
-    allNews.push(...articles);
-    await sleep(1500);
-  }
-
-  return allNews;
+  const articles = await fetchMediaStackNews();
+  return articles;
 }
 
 async function sendNewsToTelegram(article) {
