@@ -18,47 +18,31 @@ const parser = new Parser();
 // Store sent news
 const sentNews = new Set();
 
-// Arabic RSS feeds from Lebanon, Iran, and Saudi Arabia
+// Working RSS feeds with Israel/Middle East coverage
 const newsSources = [
   {
-    name: '🇱🇧 אל גדיד (לבנון)',
-    url: 'https://www.aljadeed.tv/rss/all'
+    name: '🌍 BBC World',
+    url: 'http://feeds.bbc.co.uk/news/world/rss.xml'
   },
   {
-    name: '🇱🇧 נשריה (לבנון)',
-    url: 'https://www.naharnet.com/rss'
+    name: '🌐 Al Jazeera',
+    url: 'https://www.aljazeera.com/xml/rss/all.xml'
   },
   {
-    name: '🇸🇦 אל חדת (סעודיה)',
-    url: 'https://www.alhadath.net/rss'
+    name: '📺 CNN World',
+    url: 'http://rss.cnn.com/rss/cnn_world.rss'
   },
   {
-    name: '🇸🇦 עכازה (סעודיה)',
-    url: 'https://www.aksazaa.com/rss'
+    name: '🗞️ The Guardian',
+    url: 'https://www.theguardian.com/international/rss'
   },
   {
-    name: '🇮🇷 תסנים (איראן)',
-    url: 'https://www.tasnimnews.com/en/rss/feed/0/world'
+    name: '📰 Reuters World',
+    url: 'http://feeds.reuters.com/reuters/worldNews'
   },
   {
-    name: '🇮🇷 פרס (איראן)',
-    url: 'https://www.presstv.ir/rss'
-  },
-  {
-    name: '📰 Reuters',
-    url: 'https://www.reuters.com/rssFeed/worldNews'
-  },
-  {
-    name: '💼 Axios',
-    url: 'https://feeds.axios.com/axios-world'
-  },
-  {
-    name: '📺 NBC News',
-    url: 'https://feeds.nbcnews.com/nbcnews/public/world'
-  },
-  {
-    name: '📰 AP News',
-    url: 'https://apnews.com/hub/world-news'
+    name: '🔔 Middle East Eye',
+    url: 'https://www.middleeasteye.net/feed'
   }
 ];
 
@@ -73,7 +57,10 @@ const israelKeywords = [
   'hamas', 'חמאס',
   'hezbollah', 'חיזבאללה',
   'middle east', 'אמצע מזרח',
-  'beirut', 'בירות'
+  'beirut', 'בירות',
+  'lebanon', 'לבנון',
+  'iran', 'איראן',
+  'saudi', 'סעודיה'
 ];
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -171,6 +158,10 @@ async function fetchRSSNews(source) {
       }
     }
 
+    if (articles.length > 0) {
+      log(`✅ Found ${articles.length} articles from ${source.name}`);
+    }
+
     return articles;
   } catch (error) {
     log(`Error ${source.name}: ${error.message}`);
@@ -225,7 +216,7 @@ async function checkNews() {
   log('🔄 Checking news...');
   try {
     const news = await fetchAllNews();
-    log(`Found ${news.length} articles`);
+    log(`📊 Found ${news.length} articles about Israel`);
 
     for (const article of news.slice(0, 3)) {
       await sendNewsToTelegram(article);
@@ -238,29 +229,57 @@ async function checkNews() {
 
 // Telegram commands
 bot.onText(/\/start/, async (msg) => {
-  await bot.sendMessage(msg.chat.id, `🤖 <b>Talzantbot</b>\n\nחדשות כל 2 דקות\n\n/news - חדשות עכשיו\n/help - עזרה`,
-    { parse_mode: 'HTML' });
-  log(`✅ /start from ${msg.from.id}`);
+  const chatId = msg.chat.id;
+  const welcomeMessage = `
+🤖 <b>ברוכים הבאים ל-Talzantbot!</b>
+
+אני בוט החדשות שלך שמביא עדכוני חדשות על ישראל כל 2 דקות.
+
+<b>פקודות זמינות:</b>
+/news - קבל חדשות עכשיו
+/help - עזרה
+  `;
+
+  await bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'HTML' });
+  log(`✅ /start command from ${msg.from.id}`);
 });
 
 bot.onText(/\/news/, async (msg) => {
-  await bot.sendMessage(msg.chat.id, '⏳ טוען...');
+  const chatId = msg.chat.id;
+  await bot.sendMessage(chatId, '⏳ טוען חדשות...');
   await checkNews();
-  await bot.sendMessage(msg.chat.id, '✅ בדוק!');
+  await bot.sendMessage(chatId, '✅ בדיקה הושלמה!');
 });
 
 bot.onText(/\/help/, async (msg) => {
-  await bot.sendMessage(msg.chat.id, `📖 עזרה\n\n/start - התחלה\n/news - חדשות עכשיו`,
-    { parse_mode: 'HTML' });
+  const chatId = msg.chat.id;
+  const helpMessage = `
+<b>📖 עזרה</b>
+
+<b>פקודות:</b>
+/start - התחלה
+/news - חדשות עכשיו
+/help - עזרה זו
+
+<b>מידע:</b>
+הבוט בודק חדשות על ישראל כל 2 דקות.
+כל חדשה מתורגמת ומסוכמת בעברית.
+  `;
+
+  await bot.sendMessage(chatId, helpMessage, { parse_mode: 'HTML' });
 });
 
-bot.on('error', (error) => log(`Bot error: ${error.message}`));
-bot.on('polling_error', (error) => log(`Poll error: ${error.message}`));
+bot.on('error', (error) => {
+  log(`❌ Bot error: ${error.message}`);
+});
 
-// Schedule
+bot.on('polling_error', (error) => {
+  log(`❌ Polling error: ${error.message}`);
+});
+
 cron.schedule('*/2 * * * *', checkNews);
 
-log('🚀 Talzantbot started!');
+log('🚀 Talzantbot is running!');
 log(`📍 Chat: ${chatId}`);
 log('⏰ Every 2 minutes');
 log('🤖 Ready!');
