@@ -31,7 +31,8 @@ const israelKeywords = [
   'beirut', 'בירות',
   'lebanon', 'לבנון',
   'iran', 'איראן',
-  'saudi', 'סעודיה'
+  'saudi', 'סעודיה',
+  'netanyahu', 'נתניהו'
 ];
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -102,7 +103,7 @@ async function fetchMediaStackNews() {
 
     const response = await axios.get('https://api.mediastack.com/v1/news', {
       params: {
-        keywords: 'israel,palestine,gaza,hamas,hezbollah,jerusalem,lebanon,iran',
+        keywords: 'israel,palestine,gaza,hamas,hezbollah,jerusalem,lebanon,iran,netanyahu',
         languages: 'en',
         limit: 50,
         access_key: mediastackApiKey
@@ -248,9 +249,9 @@ bot.on('polling_error', (error) => {
   log(`❌ Polling error: ${error.message}`);
 });
 
-cron.schedule('*/2 * * * *', checkNews);
+cron.schedule('*/5 * * * *', checkNews);
 
 log('🚀 Talzantbot is running!');
 log(`📍 Chat: ${chatId}`);
-log('⏰ Every 2 minutes');
+log('⏰ Every 5 minutes');
 log('🤖 Ready!');
