@@ -19,6 +19,7 @@ RUN pip3 install --break-system-packages -r requirements.txt --no-cache-dir
 COPY bot.js .
 COPY monitor.py .
 COPY Procfile .
+COPY telegram_session.session .
 
 # Create empty .env for reference (will be overridden by Railway)
 RUN echo "# Railway will inject environment variables" > .env
@@ -30,5 +31,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000', (r) => {if (r.statusCode !== 404) throw new Error(r.statusCode)})" || exit 1
 
-# Start both processes
-CMD ["sh", "-c", "node bot.js & python3 monitor.py & wait"]
+# Railway will use Procfile to start services
+# This CMD is just a fallback if Procfile is not detected
+CMD ["sh", "-c", "cat /dev/null && exit 0"]
