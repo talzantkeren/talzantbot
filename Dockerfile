@@ -1,22 +1,34 @@
 FROM node:20-alpine
 
-# Install Python
-RUN apk add --no-cache python3 py3-pip
+# Install Python and dependencies
+RUN apk add --no-cache python3 py3-pip bash
 
 WORKDIR /app
 
-# Copy files
+# Copy package files
 COPY package*.json ./
 COPY requirements.txt ./
-COPY *.js ./
-COPY *.py ./
-COPY .env .env
 
 # Install Node dependencies
 RUN npm ci --only=production
 
 # Install Python dependencies
-RUN pip install -r requirements.txt
+RUN pip3 install -r requirements.txt --no-cache-dir
 
-# Start both services
-CMD ["sh", "-c", "node bot.js & python monitor.py && wait"]
+# Copy application files (NOT .env - comes from Railway env vars)
+COPY bot.js .
+COPY monitor.py .
+COPY Procfile .
+
+# Create empty .env for reference (will be overridden by Railway)
+RUN echo "# Railway will inject environment variables" > .env
+
+# Expose port for web service (Railway requirement)
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000', (r) => {if (r.statusCode !== 404) throw new Error(r.statusCode)})" || exit 1
+
+# Start both processes
+CMD ["sh", "-c", "node bot.js & python3 monitor.py & wait"]

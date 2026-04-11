@@ -1,2 +1,2 @@
 web: node bot.js
-worker: python monitor.py
+worker: python3 monitor.py
