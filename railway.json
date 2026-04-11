@@ -3,9 +3,5 @@
   "build": {
     "builder": "dockerfile",
     "dockerfile": "Dockerfile"
-  },
-  "deploy": {
-    "startCommand": "npm start && python monitor.py",
-    "numReplicas": 1
   }
 }
