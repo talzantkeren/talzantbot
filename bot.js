@@ -1,4 +1,3 @@
-const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
@@ -13,10 +12,8 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
 const FINLIGHT_URL = 'wss://api.finlight.me/news/stream';
 const FINLIGHT_QUERY = 'israel OR iran OR hezbollah OR gaza OR missile OR strike OR ceasefire OR idf OR irgc OR hamas OR netanyahu';
-const POLYMARKET_API = 'https://gamma-api.polymarket.com/markets';
 const DEDUP_FILE = 'dedup.json';
 
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const client = new Anthropic({ apiKey: ANTHROPIC_KEY });
 
 // ===== DEDUP MANAGEMENT =====
@@ -104,12 +101,21 @@ async function sendAlert(article) {
 
     msg += `🔗 <a href="${article.url}">קרא מלא</a>`;
 
-    await bot.sendMessage(TELEGRAM_CHAT_ID, msg, {
-      parse_mode: 'HTML',
-      disable_web_page_preview: false
-    });
+    // Send via Bot API (not using TelegramBot polling)
+    const response = await axios.post(
+      `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,
+      {
+        chat_id: TELEGRAM_CHAT_ID,
+        text: msg,
+        parse_mode: 'HTML',
+        disable_web_page_preview: false
+      },
+      { timeout: 10000 }
+    );
 
-    log(`✅ Alert sent: ${hebrewTitle.substring(0, 40)}...`);
+    if (response.status === 200) {
+      log(`✅ Alert sent: ${hebrewTitle.substring(0, 40)}...`);
+    }
   } catch (error) {
     log(`❌ Send error: ${error.message}`);
   }
@@ -192,70 +198,8 @@ async function connectFinlight() {
   }
 }
 
-// ===== TELEGRAM COMMANDS =====
-bot.onText(/\/start/, async (msg) => {
-  const chatId = msg.chat.id;
-  const welcome = `
-🤖 <b>Talzantbot v2.0 - Real-Time Alert Bot</b>
-
-אני מנטר חדשות בזמן אמת דרך Finlight WebSocket.
-כל חדשה רלוונטית מתורגמת לעברית וקושרת לשוקי Polymarket.
-
-<b>פקודות:</b>
-/status - בדוק סטטוס
-/help - עזרה
-  `;
-
-  await bot.sendMessage(chatId, welcome, { parse_mode: 'HTML' });
-  log(`✅ /start from ${msg.from.id}`);
-});
-
-bot.onText(/\/status/, async (msg) => {
-  const chatId = msg.chat.id;
-  const status = ws && ws.readyState === WebSocket.OPEN ? '✅ פעיל' : '❌ לא מחובר';
-  const dedup = loadDedup().length;
-
-  const msg_text = `
-📊 <b>סטטוס</b>
-
-🔌 WebSocket: ${status}
-📝 ברשומת Dedup: ${dedup} חדשות
-🕐 זמן: ${new Date().toLocaleString('he-IL')}
-  `;
-
-  await bot.sendMessage(chatId, msg_text, { parse_mode: 'HTML' });
-});
-
-bot.onText(/\/help/, async (msg) => {
-  const chatId = msg.chat.id;
-  const help = `
-<b>📖 עזרה</b>
-
-<b>מערכת זו:</b>
-• מנטרת Finlight WebSocket בזמן אמת
-• מתרגמת כותרות לעברית
-• חוזרת שוקים רלוונטיים ב-Polymarket
-
-<b>פקודות:</b>
-/start - התחלה
-/status - סטטוס חיבור
-/help - עזרה
-
-<b>הערות:</b>
-עיכוב: <100ms מהפרסום
-שפה: Hebrew + Polymarket links
-  `;
-
-  await bot.sendMessage(chatId, help, { parse_mode: 'HTML' });
-});
-
-bot.on('error', (error) => {
-  log(`❌ Bot error: ${error.message}`);
-});
-
-bot.on('polling_error', (error) => {
-  log(`❌ Polling error: ${error.message}`);
-});
+// Telegram polling disabled - monitor.py handles all Telegram interaction
+// (having 2 polling instances causes 409 Conflict)
 
 // ===== STARTUP =====
 log('🚀 Talzantbot v2.0 starting...');
