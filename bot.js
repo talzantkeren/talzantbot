@@ -151,6 +151,13 @@ async function connectFinlight() {
             return;
           }
 
+          // Filter out unwanted sources (financial, generic news)
+          const ignoredSources = ['yahoo finance', 'yahoo', 'marketwatch', 'cnbc', 'bloomberg'];
+          if (ignoredSources.some(s => source?.toLowerCase().includes(s))) {
+            log(`🚫 Filtered out: ${source}`);
+            return;
+          }
+
           if (isDuplicate(title)) {
             log(`🔄 Duplicate: ${title.substring(0, 40)}...`);
             return;
