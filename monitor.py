@@ -102,11 +102,37 @@ def matches_keywords(text: str) -> bool:
     lower = text.lower()
     return any(kw in lower for kw in KEYWORDS)
 
-def send_to_telegram(source: str, text: str):
+async def translate_with_claude(text: str) -> str:
+    """Translate text to Hebrew using Claude API"""
+    try:
+        from anthropic import Anthropic
+
+        client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+
+        message = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=500,
+            system='תרגם לעברית תקני בלבד. אל תערבב עם אנגלית. שמור מלא וברור.',
+            messages=[
+                {
+                    'role': 'user',
+                    'content': text
+                }
+            ]
+        )
+        return message.content[0].text
+    except Exception as error:
+        log(f'⚠️ Translation error: {error}')
+        return text
+
+def send_to_telegram(source: str, text: str, translated: str = None):
     """Send message to Telegram chat via Bot API"""
     try:
-        # Truncate to 400 chars
-        msg_text = text[:400]
+        # Use translation if available, else original
+        msg_text = translated or text
+
+        # Truncate to 1000 chars (מלא!)
+        msg_text = msg_text[:1000]
 
         # Format message
         formatted = f"""📡 <b>[{source}]</b>
@@ -200,12 +226,15 @@ async def main():
 
                 log(f'📰 Found relevant news from {channel_name}: {msg_text[:60]}...')
 
+                # Translate to Hebrew
+                translated = await translate_with_claude(msg_text)
+
                 # Send to Telegram (synchronous, in thread to avoid blocking)
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, send_to_telegram, channel_name, msg_text)
+                await loop.run_in_executor(None, send_to_telegram, channel_name, msg_text, translated)
 
-                # Rate limit - 1 second between sends
-                await asyncio.sleep(1)
+                # Rate limit - 2 seconds between sends (translation takes time)
+                await asyncio.sleep(2)
 
             except Exception as error:
                 log(f'⚠️ Handler error: {error}')
