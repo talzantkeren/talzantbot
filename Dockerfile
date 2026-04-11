@@ -13,7 +13,7 @@ COPY requirements.txt ./
 RUN npm install --only=production
 
 # Install Python dependencies
-RUN pip3 install -r requirements.txt --no-cache-dir
+RUN pip3 install --break-system-packages -r requirements.txt --no-cache-dir
 
 # Copy application files (NOT .env - comes from Railway env vars)
 COPY bot.js .
