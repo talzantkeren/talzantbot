@@ -136,15 +136,21 @@ async function connectFinlight() {
     log(`📡 Listening to: ${FINLIGHT_QUERY}`);
 
     // Connect WebSocket with query
+    let articleCount = 0;
+
     await finlightClient.websocket.connect(
       { query: FINLIGHT_QUERY, language: 'en', extended: true },
       async (article) => {
         try {
+          articleCount++;
+
           // Article object: { title, url, source, published_at, summary, etc }
           const title = article.title || article.headline || '';
           const url = article.url || article.link || '';
           const source = article.source || 'Finlight';
           const description = article.summary || article.description || '';
+
+          log(`📨 Article #${articleCount} received from ${source}`);
 
           if (!title) {
             log(`⚠️ Skipping article: no title`);
@@ -163,7 +169,7 @@ async function connectFinlight() {
             return;
           }
 
-          log(`📰 New article: ${title.substring(0, 50)}...`);
+          log(`📰 Processing article: ${title.substring(0, 50)}...`);
 
           await sendAlert({
             title,
