@@ -102,25 +102,18 @@ def matches_keywords(text: str) -> bool:
     lower = text.lower()
     return any(kw in lower for kw in KEYWORDS)
 
-async def translate_with_claude(text: str) -> str:
-    """Translate text to Hebrew using Claude API"""
+async def translate_with_gemini(text: str) -> str:
+    """Translate text to Hebrew using Gemini API"""
     try:
-        from anthropic import Anthropic
+        import google.generativeai as genai
 
-        client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+        genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+        model = genai.GenerativeModel('gemini-1.5-flash')
 
-        message = client.messages.create(
-            model='claude-haiku-4-5-20251001',
-            max_tokens=500,
-            system='תרגם לעברית תקני בלבד. אל תערבב עם אנגלית. שמור מלא וברור.',
-            messages=[
-                {
-                    'role': 'user',
-                    'content': text
-                }
-            ]
+        response = model.generate_content(
+            f"תרגם את הטקסט הזה לעברית תקנית. רק התרגום, בלי הוספות:\n\n{text[:1000]}"
         )
-        return message.content[0].text
+        return response.text
     except Exception as error:
         log(f'⚠️ Translation error: {error}')
         return text
@@ -226,8 +219,8 @@ async def main():
 
                 log(f'📰 Found relevant news from {channel_name}: {msg_text[:60]}...')
 
-                # Translate to Hebrew
-                translated = await translate_with_claude(msg_text)
+                # Translate to Hebrew (Gemini)
+                translated = await translate_with_gemini(msg_text)
 
                 # Send to Telegram (synchronous, in thread to avoid blocking)
                 loop = asyncio.get_event_loop()
