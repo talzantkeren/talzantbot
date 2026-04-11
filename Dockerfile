@@ -10,7 +10,7 @@ COPY package*.json ./
 COPY requirements.txt ./
 
 # Install Node dependencies
-RUN npm ci --only=production
+RUN npm install --only=production
 
 # Install Python dependencies
 RUN pip3 install -r requirements.txt --no-cache-dir
