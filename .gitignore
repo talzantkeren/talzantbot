@@ -40,6 +40,5 @@ temp/
 # Bot state
 dedup.json
 
-# Telethon session (contains auth credentials)
-*.session
+# Telethon session journal (temporary)
 *.session-journal
