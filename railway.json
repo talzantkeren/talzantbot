@@ -3,5 +3,8 @@
   "build": {
     "builder": "dockerfile",
     "dockerfile": "Dockerfile"
+  },
+  "deploy": {
+    "procfilePath": "Procfile"
   }
 }
