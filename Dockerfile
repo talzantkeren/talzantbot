@@ -31,6 +31,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000', (r) => {if (r.statusCode !== 404) throw new Error(r.statusCode)})" || exit 1
 
-# Railway will use Procfile to start services
-# This CMD is just a fallback if Procfile is not detected
-CMD ["sh", "-c", "cat /dev/null && exit 0"]
+# Use honcho to run Procfile services
+CMD ["honcho", "-f", "Procfile", "start"]
