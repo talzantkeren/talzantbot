@@ -11,7 +11,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
 const FINLIGHT_URL = 'wss://api.finlight.me/news/stream';
-const FINLIGHT_QUERY = 'israel iran middle east breaking news';
+const FINLIGHT_QUERY = 'israel attack missile iran hezbollah hamas gaza idf';
 const DEDUP_FILE = 'dedup.json';
 
 const client = new Anthropic({ apiKey: ANTHROPIC_KEY });
