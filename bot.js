@@ -1,6 +1,7 @@
 const axios = require('axios');
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
+const crypto = require('crypto');
 const { FinlightApi } = require('finlight-client');
 require('dotenv').config();
 
@@ -33,7 +34,9 @@ function saveDedup(hashes) {
 }
 
 function generateHash(title) {
-  return title.toLowerCase().substring(0, 60);
+  // Use full MD5 hash of normalized title for better dedup
+  const normalized = title.toLowerCase().trim();
+  return crypto.createHash('md5').update(normalized).digest('hex');
 }
 
 function isDuplicate(title) {
@@ -163,10 +166,19 @@ async function connectFinlight() {
             return;
           }
 
-          // Filter out unwanted sources (financial, generic news)
-          const ignoredSources = ['yahoo finance', 'yahoo', 'marketwatch'];
+          // Filter out unwanted sources (financial, generic news, entertainment)
+          const ignoredSources = ['yahoo finance', 'yahoo', 'marketwatch', 'fox news', 'bbc weather'];
           if (ignoredSources.some(s => source?.toLowerCase().includes(s))) {
             log(`🚫 Filtered out: ${source}`);
+            return;
+          }
+
+          // Filter out articles older than 3 hours
+          const publishedAt = article.published_at ? new Date(article.published_at).getTime() : Date.now();
+          const now = Date.now();
+          const ageHours = (now - publishedAt) / (1000 * 60 * 60);
+          if (ageHours > 3) {
+            log(`⏰ Skipped old article (${ageHours.toFixed(1)}h old): ${title.substring(0, 40)}...`);
             return;
           }
 
