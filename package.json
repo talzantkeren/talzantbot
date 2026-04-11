@@ -1,7 +1,7 @@
 {
   "name": "talzantbot",
-  "version": "1.0.0",
-  "description": "Telegram news bot with Hebrew translation",
+  "version": "2.0.0",
+  "description": "Real-time trading alert bot - Finlight WebSocket + Telegram + Polymarket",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
@@ -9,20 +9,20 @@
   },
   "keywords": [
     "telegram",
-    "news",
-    "bot"
+    "finlight",
+    "polymarket",
+    "websocket",
+    "realtime"
   ],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.25.0",
     "axios": "^1.6.5",
-    "cheerio": "^1.0.0-rc.12",
     "dotenv": "^16.4.5",
-    "newsapi": "^2.4.1",
-    "node-cron": "^3.0.2",
+    "finlight-client": "^3.3.0",
     "node-telegram-bot-api": "^0.65.0",
-    "rss-parser": "^3.13.0"
+    "ws": "^8.17.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

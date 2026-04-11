@@ -1,244 +1,297 @@
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
-const cron = require('node-cron');
 const Anthropic = require('@anthropic-ai/sdk');
+const fs = require('fs');
+const { FinlightApi } = require('finlight-client');
 require('dotenv').config();
 
-// Configuration
-const token = process.env.TELEGRAM_BOT_TOKEN;
-const chatId = process.env.TELEGRAM_CHAT_ID;
-const anthropicKey = process.env.ANTHROPIC_API_KEY;
-const mediastackApiKey = process.env.MEDIASTACK_API_KEY;
+// ===== CONFIG =====
+const FINLIGHT_KEY = process.env.FINLIGHT_API_KEY;
+const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
-// Initialize clients
-const bot = new TelegramBot(token, { polling: true });
-const client = new Anthropic({ apiKey: anthropicKey });
+const FINLIGHT_URL = 'wss://api.finlight.me/news/stream';
+const FINLIGHT_QUERY = 'israel OR iran OR hezbollah OR gaza OR missile OR strike OR ceasefire OR idf OR irgc OR hamas OR netanyahu';
+const POLYMARKET_API = 'https://gamma-api.polymarket.com/markets';
+const DEDUP_FILE = 'dedup.json';
 
-// Store sent news
-const sentNews = new Set();
+const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+const client = new Anthropic({ apiKey: ANTHROPIC_KEY });
 
-// Keywords to filter news about Israel
-const israelKeywords = [
-  'israel', 'israeli', 'אישראל',
-  'palestine', 'palestinian', 'פלשתינה',
-  'gaza', 'עזה',
-  'west bank', 'בנק מערבי',
-  'tel aviv', 'תל אביב',
-  'jerusalem', 'ירושלים',
-  'hamas', 'חמאס',
-  'hezbollah', 'חיזבאללה',
-  'middle east', 'אמצע מזרח',
-  'beirut', 'בירות',
-  'lebanon', 'לבנון',
-  'iran', 'איראן',
-  'saudi', 'סעודיה',
-  'netanyahu', 'נתניהו'
-];
-
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-function generateNewsHash(title, source) {
-  return `${title.toLowerCase().substring(0, 50)}_${source}`;
-}
-
-function isHebrew(text) {
-  const hebrewRegex = /[\u0590-\u05FF]/g;
-  const matches = text.match(hebrewRegex) || [];
-  return matches.length > text.length * 0.2;
-}
-
-// Check if news is about Israel
-function isAboutIsrael(title) {
-  const lowerTitle = title.toLowerCase();
-  return israelKeywords.some(keyword => lowerTitle.includes(keyword));
-}
-
-async function translateToHebrew(text) {
-  if (isHebrew(text)) return text;
-
+// ===== DEDUP MANAGEMENT =====
+function loadDedup() {
   try {
-    const message = await client.messages.create({
-      model: 'claude-opus-4-6',
-      max_tokens: 500,
-      messages: [
-        {
-          role: 'user',
-          content: `Translate to Hebrew. Only output the translation:\n\n${text.substring(0, 200)}`
-        }
-      ]
-    });
-    return message.content[0].text;
-  } catch (error) {
-    log(`Translation error: ${error.message}`);
-    return text;
-  }
-}
-
-// Summarize article
-async function summarizeArticle(title, description) {
-  try {
-    const text = `${title}\n\n${description}`.substring(0, 500);
-
-    const message = await client.messages.create({
-      model: 'claude-opus-4-6',
-      max_tokens: 150,
-      messages: [
-        {
-          role: 'user',
-          content: `Summarize this news in 1-2 sentences in Hebrew:\n\n${text}`
-        }
-      ]
-    });
-
-    return message.content[0].text;
-  } catch (error) {
-    log(`Summary error: ${error.message}`);
-    return '';
-  }
-}
-
-async function fetchMediaStackNews() {
-  try {
-    log(`📡 Fetching news from MediaStack API...`);
-
-    const response = await axios.get('https://api.mediastack.com/v1/news', {
-      params: {
-        keywords: 'israel,palestine,gaza,hamas,hezbollah,jerusalem,lebanon,iran,netanyahu',
-        languages: 'en',
-        limit: 50,
-        access_key: mediastackApiKey
-      }
-    });
-
-    if (!response.data.data || response.data.data.length === 0) {
-      log(`⚠️ No articles found`);
-      return [];
-    }
-
-    const articles = [];
-    for (const item of response.data.data.slice(0, 20)) {
-      const title = item.title || '';
-      if (!title) continue;
-
-      // Filter - only articles about Israel
-      if (!isAboutIsrael(title)) {
-        continue;
-      }
-
-      const hash = generateNewsHash(title, 'MediaStack');
-      if (!sentNews.has(hash)) {
-        articles.push({
-          title: title.substring(0, 150),
-          description: item.description || '',
-          link: item.url || '',
-          source: '📰 MediaStack',
-          hash
-        });
-      }
-    }
-
-    if (articles.length > 0) {
-      log(`✅ Found ${articles.length} articles`);
-    }
-
-    return articles;
-  } catch (error) {
-    log(`Error fetching from MediaStack: ${error.message}`);
+    const data = fs.readFileSync(DEDUP_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch (e) {
     return [];
   }
 }
 
-async function fetchAllNews() {
-  const articles = await fetchMediaStackNews();
-  return articles;
+function saveDedup(hashes) {
+  // Keep only last 500
+  const trimmed = hashes.slice(-500);
+  fs.writeFileSync(DEDUP_FILE, JSON.stringify(trimmed, null, 2));
 }
 
-async function sendNewsToTelegram(article) {
+function generateHash(title) {
+  return title.toLowerCase().substring(0, 60);
+}
+
+function isDuplicate(title) {
+  const hash = generateHash(title);
+  const dedup = loadDedup();
+  return dedup.includes(hash);
+}
+
+function addToDedup(title) {
+  const hash = generateHash(title);
+  const dedup = loadDedup();
+  if (!dedup.includes(hash)) {
+    dedup.push(hash);
+    saveDedup(dedup);
+  }
+}
+
+// ===== TRANSLATION (Claude Haiku - fastest) =====
+async function translateTitle(title) {
   try {
-    const hebrewTitle = await translateToHebrew(article.title);
-    sentNews.add(article.hash);
+    const shortTitle = title.substring(0, 100);
+    const message = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 200,
+      system: 'תרגם לעברית תקני בלבד. אל תערבב עם אנגלית. שמור קצר.',
+      messages: [
+        {
+          role: 'user',
+          content: shortTitle
+        }
+      ]
+    });
+    return message.content[0].text;
+  } catch (error) {
+    log(`❌ Translation error: ${error.message}`);
+    return title;
+  }
+}
 
-    // Get summary
-    const summary = await summarizeArticle(article.title, article.description);
+// ===== POLYMARKET SEARCH =====
+function extractKeywords(title) {
+  const keywords = [
+    'israel', 'iran', 'missile', 'strike', 'ceasefire', 'attack',
+    'irgc', 'hezbollah', 'hamas', 'gaza', 'ukraine', 'russia',
+    'china', 'taiwan', 'election', 'war', 'nuclear', 'sanctions'
+  ];
 
-    let msg = `📰 <b>חדשה</b>\n\n<b>${hebrewTitle.substring(0, 100)}</b>\n\n`;
+  const lower = title.toLowerCase();
+  const matches = keywords.filter(kw => lower.includes(kw));
 
-    if (summary) {
-      msg += `📝 <i>${summary}</i>\n\n`;
+  // Default to Middle East if no matches
+  return matches.length > 0 ? matches : ['israel', 'iran'];
+}
+
+async function searchPolymarket(title) {
+  try {
+    const keywords = extractKeywords(title);
+    const query = keywords.join(' OR ');
+
+    const response = await axios.get(POLYMARKET_API, {
+      params: {
+        active: 'true',
+        q: query,
+        limit: 5
+      },
+      timeout: 5000
+    });
+
+    // Handle both array and { markets: [...] } formats
+    const markets = Array.isArray(response.data) ? response.data : (response.data.markets || []);
+
+    if (markets.length === 0) return null;
+
+    // Sort by volume descending
+    const sorted = markets.sort((a, b) => {
+      const volA = a.volumeNum || a.volume24h || 0;
+      const volB = b.volumeNum || b.volume24h || 0;
+      return volB - volA;
+    });
+
+    const top = sorted[0];
+    return {
+      question: top.question || top.title || '',
+      slug: top.slug || top.id || ''
+    };
+  } catch (error) {
+    log(`⚠️ Polymarket search error: ${error.message}`);
+    return null;
+  }
+}
+
+// ===== TELEGRAM MESSAGE =====
+function escapeHtml(text) {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function sendAlert(article) {
+  try {
+    // Translate title
+    const hebrewTitle = await translateTitle(article.title);
+    addToDedup(article.title);
+
+    // Search Polymarket
+    const market = await searchPolymarket(article.title);
+
+    // Build message
+    let msg = `🔴 <b>[${article.source}]</b> ${escapeHtml(hebrewTitle)}\n\n`;
+
+    if (article.description) {
+      const desc = article.description.substring(0, 150);
+      msg += `📋 <i>${escapeHtml(desc)}</i>\n\n`;
     }
 
-    msg += `<i>מקור: ${article.source}</i>\n\n<a href="${article.link}">קרא את המלא</a>`;
+    msg += `🔗 <a href="${article.url}">קרא מלא</a>`;
 
-    await bot.sendMessage(chatId, msg, {
+    if (market && market.slug) {
+      msg += `\n\n🎰 <b>Polymarket:</b> ${escapeHtml(market.question)}\n`;
+      msg += `<a href="https://polymarket.com/market/${market.slug}">פתח בשוק</a>`;
+    }
+
+    await bot.sendMessage(TELEGRAM_CHAT_ID, msg, {
       parse_mode: 'HTML',
       disable_web_page_preview: false
     });
 
-    log(`✅ ${hebrewTitle.substring(0, 40)}... + סיכום`);
+    log(`✅ Alert sent: ${hebrewTitle.substring(0, 40)}...`);
   } catch (error) {
-    log(`Send error: ${error.message}`);
+    log(`❌ Send error: ${error.message}`);
   }
 }
 
+// ===== LOGGING =====
 function log(message) {
   console.log(`[${new Date().toLocaleString('he-IL')}] ${message}`);
 }
 
-async function checkNews() {
-  log('🔄 Checking news...');
-  try {
-    const news = await fetchAllNews();
-    log(`📊 Found ${news.length} articles about Israel`);
+// ===== FINLIGHT CLIENT =====
+let finlightClient = null;
+let finlightConnected = false;
 
-    for (const article of news.slice(0, 3)) {
-      await sendNewsToTelegram(article);
-      await sleep(500);
-    }
+async function connectFinlight() {
+  try {
+    log('🔌 Connecting to Finlight API...');
+
+    finlightClient = new FinlightApi({
+      apiKey: FINLIGHT_KEY
+    });
+
+    log('✅ Finlight client initialized');
+    log(`📡 Listening to: ${FINLIGHT_QUERY}`);
+
+    // Connect WebSocket with query
+    await finlightClient.websocket.connect(
+      { query: FINLIGHT_QUERY, language: 'en', extended: true },
+      async (article) => {
+        try {
+          // Article object: { title, url, source, published_at, summary, etc }
+          const title = article.title || article.headline || '';
+          const url = article.url || article.link || '';
+          const source = article.source || 'Finlight';
+          const description = article.summary || article.description || '';
+
+          if (!title) {
+            log(`⚠️ Skipping article: no title`);
+            return;
+          }
+
+          if (isDuplicate(title)) {
+            log(`🔄 Duplicate: ${title.substring(0, 40)}...`);
+            return;
+          }
+
+          log(`📰 New article: ${title.substring(0, 50)}...`);
+
+          await sendAlert({
+            title,
+            url,
+            source,
+            description
+          });
+
+        } catch (error) {
+          log(`❌ Article processing error: ${error.message}`);
+        }
+      }
+    );
+
+    finlightConnected = true;
   } catch (error) {
-    log(`Check error: ${error.message}`);
+    log(`❌ Finlight error: ${error.message}`);
+    log('⏰ Reconnecting in 5 seconds...');
+    setTimeout(connectFinlight, 5000);
   }
 }
 
-// Telegram commands
+// ===== TELEGRAM COMMANDS =====
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
-  const welcomeMessage = `
-🤖 <b>ברוכים הבאים ל-Talzantbot!</b>
+  const welcome = `
+🤖 <b>Talzantbot v2.0 - Real-Time Alert Bot</b>
 
-אני בוט החדשות שלך שמביא עדכוני חדשות על ישראל כל 2 דקות.
+אני מנטר חדשות בזמן אמת דרך Finlight WebSocket.
+כל חדשה רלוונטית מתורגמת לעברית וקושרת לשוקי Polymarket.
 
-<b>פקודות זמינות:</b>
-/news - קבל חדשות עכשיו
+<b>פקודות:</b>
+/status - בדוק סטטוס
 /help - עזרה
   `;
 
-  await bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'HTML' });
-  log(`✅ /start command from ${msg.from.id}`);
+  await bot.sendMessage(chatId, welcome, { parse_mode: 'HTML' });
+  log(`✅ /start from ${msg.from.id}`);
 });
 
-bot.onText(/\/news/, async (msg) => {
+bot.onText(/\/status/, async (msg) => {
   const chatId = msg.chat.id;
-  await bot.sendMessage(chatId, '⏳ טוען חדשות...');
-  await checkNews();
-  await bot.sendMessage(chatId, '✅ בדיקה הושלמה!');
+  const status = ws && ws.readyState === WebSocket.OPEN ? '✅ פעיל' : '❌ לא מחובר';
+  const dedup = loadDedup().length;
+
+  const msg_text = `
+📊 <b>סטטוס</b>
+
+🔌 WebSocket: ${status}
+📝 ברשומת Dedup: ${dedup} חדשות
+🕐 זמן: ${new Date().toLocaleString('he-IL')}
+  `;
+
+  await bot.sendMessage(chatId, msg_text, { parse_mode: 'HTML' });
 });
 
 bot.onText(/\/help/, async (msg) => {
   const chatId = msg.chat.id;
-  const helpMessage = `
+  const help = `
 <b>📖 עזרה</b>
+
+<b>מערכת זו:</b>
+• מנטרת Finlight WebSocket בזמן אמת
+• מתרגמת כותרות לעברית
+• חוזרת שוקים רלוונטיים ב-Polymarket
 
 <b>פקודות:</b>
 /start - התחלה
-/news - חדשות עכשיו
-/help - עזרה זו
+/status - סטטוס חיבור
+/help - עזרה
 
-<b>מידע:</b>
-הבוט בודק חדשות על ישראל כל 2 דקות.
-כל חדשה מתורגמת ומסוכמת בעברית.
+<b>הערות:</b>
+עיכוב: <100ms מהפרסום
+שפה: Hebrew + Polymarket links
   `;
 
-  await bot.sendMessage(chatId, helpMessage, { parse_mode: 'HTML' });
+  await bot.sendMessage(chatId, help, { parse_mode: 'HTML' });
 });
 
 bot.on('error', (error) => {
@@ -249,9 +302,10 @@ bot.on('polling_error', (error) => {
   log(`❌ Polling error: ${error.message}`);
 });
 
-cron.schedule('*/5 * * * *', checkNews);
-
-log('🚀 Talzantbot is running!');
-log(`📍 Chat: ${chatId}`);
-log('⏰ Every 5 minutes');
-log('🤖 Ready!');
+// ===== STARTUP =====
+log('🚀 Talzantbot v2.0 starting...');
+log(`📍 Chat ID: ${TELEGRAM_CHAT_ID}`);
+log(`⚙️ Model: claude-haiku-4-5-20251001`);
+log(`📡 Finlight API: ${FINLIGHT_URL}`);
+connectFinlight();
+log('✅ Ready!');

@@ -36,3 +36,10 @@ build/
 # Misc
 .cache/
 temp/
+
+# Bot state
+dedup.json
+
+# Telethon session (contains auth credentials)
+*.session
+*.session-journal
