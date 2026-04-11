@@ -22,6 +22,7 @@ import asyncio
 import os
 import json
 import requests
+import hashlib
 from datetime import datetime
 from telethon import TelegramClient, events
 from dotenv import load_dotenv
@@ -46,15 +47,53 @@ KEYWORDS = {
 }
 
 # Channels to monitor (without @)
-MONITOR_CHANNELS = ['Irna_en', 'presstv']
+MONITOR_CHANNELS = [
+    # Israeli channels
+    'amitseg', 'barakravid1', 'ndvorii', 'orheller_il', 'idfofficial',
+    'beholdisraelchannel', 'moriahdoron', 'barakbetesh', 'lieldaphna',
+    'inon_yttach', 'amielyarchi', 'HallelBittonRosen',
+    # Iranian channels
+    'sepah_ir', 'sepah_pasdaran', 'BisimchiMedia', 'IRIran_Military',
+    'defapress_ir', 'Tasnimnews', 'Tasnim_Agency', 'farsna', 'Nournews_ir',
+    'Irna_en', 'mehrnews', 'isna94', 'PressTV', 'IranintlTV', 'vahidonline',
+    # Arab/International channels
+    'almanarnews', 'almayadeen', 'mayadeenchannel', 'alakhbar_news',
+    'aljazeera', 'Alarabiya', 'aawsatnews', 'wamnews_en',
+    # Other
+    'US2020US'
+]
 
-# In-memory dedup (acceptable for live stream monitoring)
-SEEN_MESSAGES = set()
+# Better dedup - track message content hash
+SEEN_MESSAGES = {}  # {message_hash: timestamp}
 
 def log(message):
     """Log with timestamp"""
     ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(f'[{ts}] {message}')
+
+def compute_message_hash(text: str) -> str:
+    """Compute hash of message content - normalize whitespace and lowercase"""
+    # Normalize: lowercase, remove extra whitespace, take first 200 chars
+    normalized = ' '.join(text.lower().split())[:200]
+    return hashlib.md5(normalized.encode()).hexdigest()
+
+def is_duplicate(text: str) -> bool:
+    """Check if we've seen this exact message before (dedup window: 2 hours)"""
+    global SEEN_MESSAGES
+
+    msg_hash = compute_message_hash(text)
+    now = datetime.now().timestamp()
+
+    # Clean old entries (older than 2 hours)
+    cutoff = now - (2 * 3600)
+    SEEN_MESSAGES = {k: v for k, v in SEEN_MESSAGES.items() if v > cutoff}
+
+    if msg_hash in SEEN_MESSAGES:
+        return True
+
+    # Add to seen
+    SEEN_MESSAGES[msg_hash] = now
+    return False
 
 def matches_keywords(text: str) -> bool:
     """Check if text contains any relevant keywords"""
@@ -144,31 +183,26 @@ async def main():
             try:
                 msg_text = event.message.message or ''
 
-                if not msg_text:
+                if not msg_text or len(msg_text) < 10:
                     return
 
-                # Dedup - skip if we've seen this exact message before
-                dedup_key = msg_text[:60].lower().strip()
-                if dedup_key in SEEN_MESSAGES:
+                # Dedup - skip if we've seen similar content (within 2 hours)
+                if is_duplicate(msg_text):
+                    log(f'🔄 Duplicate detected: {msg_text[:40]}...')
                     return
-
-                SEEN_MESSAGES.add(dedup_key)
 
                 # Filter by keywords
                 if not matches_keywords(msg_text):
                     return
 
-                # Determine source
-                if 'irna' in str(event.chat_id).lower():
-                    source = 'IRNA'
-                else:
-                    source = 'PressTV'
+                # Get channel name
+                channel_name = event.chat.title or 'Unknown'
 
-                log(f'📰 Found relevant news from {source}: {msg_text[:60]}...')
+                log(f'📰 Found relevant news from {channel_name}: {msg_text[:60]}...')
 
                 # Send to Telegram (synchronous, in thread to avoid blocking)
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, send_to_telegram, source, msg_text)
+                await loop.run_in_executor(None, send_to_telegram, channel_name, msg_text)
 
                 # Rate limit - 1 second between sends
                 await asyncio.sleep(1)

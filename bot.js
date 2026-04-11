@@ -76,57 +76,7 @@ async function translateTitle(title) {
   }
 }
 
-// ===== POLYMARKET SEARCH =====
-function extractKeywords(title) {
-  const keywords = [
-    'israel', 'iran', 'missile', 'strike', 'ceasefire', 'attack',
-    'irgc', 'hezbollah', 'hamas', 'gaza', 'ukraine', 'russia',
-    'china', 'taiwan', 'election', 'war', 'nuclear', 'sanctions'
-  ];
-
-  const lower = title.toLowerCase();
-  const matches = keywords.filter(kw => lower.includes(kw));
-
-  // Default to Middle East if no matches
-  return matches.length > 0 ? matches : ['israel', 'iran'];
-}
-
-async function searchPolymarket(title) {
-  try {
-    const keywords = extractKeywords(title);
-    const query = keywords.join(' OR ');
-
-    const response = await axios.get(POLYMARKET_API, {
-      params: {
-        active: 'true',
-        q: query,
-        limit: 5
-      },
-      timeout: 5000
-    });
-
-    // Handle both array and { markets: [...] } formats
-    const markets = Array.isArray(response.data) ? response.data : (response.data.markets || []);
-
-    if (markets.length === 0) return null;
-
-    // Sort by volume descending
-    const sorted = markets.sort((a, b) => {
-      const volA = a.volumeNum || a.volume24h || 0;
-      const volB = b.volumeNum || b.volume24h || 0;
-      return volB - volA;
-    });
-
-    const top = sorted[0];
-    return {
-      question: top.question || top.title || '',
-      slug: top.slug || top.id || ''
-    };
-  } catch (error) {
-    log(`⚠️ Polymarket search error: ${error.message}`);
-    return null;
-  }
-}
+// Polymarket removed to save on API costs
 
 // ===== TELEGRAM MESSAGE =====
 function escapeHtml(text) {
@@ -144,9 +94,6 @@ async function sendAlert(article) {
     const hebrewTitle = await translateTitle(article.title);
     addToDedup(article.title);
 
-    // Search Polymarket
-    const market = await searchPolymarket(article.title);
-
     // Build message
     let msg = `🔴 <b>[${article.source}]</b> ${escapeHtml(hebrewTitle)}\n\n`;
 
@@ -156,11 +103,6 @@ async function sendAlert(article) {
     }
 
     msg += `🔗 <a href="${article.url}">קרא מלא</a>`;
-
-    if (market && market.slug) {
-      msg += `\n\n🎰 <b>Polymarket:</b> ${escapeHtml(market.question)}\n`;
-      msg += `<a href="https://polymarket.com/market/${market.slug}">פתח בשוק</a>`;
-    }
 
     await bot.sendMessage(TELEGRAM_CHAT_ID, msg, {
       parse_mode: 'HTML',
