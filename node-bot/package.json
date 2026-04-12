@@ -1,0 +1,22 @@
+{
+  "name": "talzantbot-bot",
+  "version": "2.0.0",
+  "description": "Finlight WebSocket news aggregator with Gemini translation",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "nodemon bot.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.5",
+    "dotenv": "^16.4.5",
+    "finlight-client": "^3.3.0",
+    "grammy": "^1.30.0",
+    "@grammyjs/auto-retry": "^2.0.0",
+    "ioredis": "^5.4.0",
+    "ws": "^8.17.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

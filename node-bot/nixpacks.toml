@@ -1,0 +1,5 @@
+[providers]
+providers = ["node"]
+
+[start]
+start = "node bot.js"

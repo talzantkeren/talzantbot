@@ -37,8 +37,9 @@ build/
 .cache/
 temp/
 
-# Bot state
+# Bot state files (Redis is used instead)
 dedup.json
 
-# Telethon session journal (temporary)
+# Telethon session files (use TELEGRAM_SESSION_STRING env var instead)
+*.session
 *.session-journal

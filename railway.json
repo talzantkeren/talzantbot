@@ -1,10 +1,27 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
-  "build": {
-    "builder": "dockerfile",
-    "dockerfile": "Dockerfile"
-  },
-  "deploy": {
-    "procfilePath": "Procfile"
-  }
+  "services": [
+    {
+      "name": "bot",
+      "root": "./node-bot",
+      "build": {
+        "builder": "dockerfile",
+        "dockerfile": "Dockerfile"
+      },
+      "deploy": {
+        "startCommand": "node bot.js"
+      }
+    },
+    {
+      "name": "monitor",
+      "root": "./python-monitor",
+      "build": {
+        "builder": "dockerfile",
+        "dockerfile": "Dockerfile"
+      },
+      "deploy": {
+        "startCommand": "python monitor.py"
+      }
+    }
+  ]
 }
