@@ -1,0 +1,81 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    RAILWAY DEPLOYMENT - 2 MINUTE SETUP
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ CODE IS ALREADY PUSHED TO GITHUB
+
+Now you just need to do this 2-minute setup in Railway:
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 1: CREATE RAILWAY PROJECT (1 minute)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Open: https://railway.app/new
+2. Click: "Deploy from GitHub"
+3. Select: talzantbot repository
+4. Click: "Create"
+
+Wait for it to deploy (you'll see services starting)
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 2: ADD REDIS (30 seconds)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. In Railway dashboard, click: "+ Add Service"
+2. Select: "Redis"
+3. Wait for green checkmark (auto-deploys)
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 3: SET ENVIRONMENT VARIABLES (30 seconds)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Go to: Project Settings → Variables
+2. Add these 8 variables (copy from your .env file):
+
+   TELEGRAM_BOT_TOKEN=8557763207:AAHT-8uWzAz...
+   TELEGRAM_CHAT_ID=1691769494
+   TELEGRAM_API_ID=26445837
+   TELEGRAM_API_HASH=223575c96a5433a2d2b980ca996357c5
+   TELEGRAM_SESSION_STRING=1BJWap1sBuwQYP7FhGhLn_UgrPTFbrmQTE... (FULL STRING)
+   FINLIGHT_API_KEY=sk_324f698bb5fdc82e044e67...
+   GEMINI_API_KEY=AIzaSyA3Ch-vVjxLLTA2TkEynkQbkzAO6jg...
+   ANTHROPIC_API_KEY=sk-ant-api03-Sj_MGanMdk1yuMh...
+
+3. Save
+
+═══════════════════════════════════════════════════════════════════════════════
+THAT'S IT!
+═══════════════════════════════════════════════════════════════════════════════
+
+Your bot is now LIVE on Railway! 🚀
+
+Check in 30 seconds:
+- Go to Railway dashboard
+- All 3 services should show green checkmarks
+- Check logs - should see "✅ Connected" messages
+- Articles will start appearing in your Telegram chat
+
+═══════════════════════════════════════════════════════════════════════════════
+TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════════════
+
+Problem: Services keep restarting
+→ Check Railway logs - likely missing environment variable
+→ Add TELEGRAM_SESSION_STRING if not there
+
+Problem: No alerts in Telegram
+→ Check logs in Railway (web service and worker service)
+→ Verify all 8 environment variables are set
+
+Problem: Redis connection error
+→ Make sure Redis service is deployed (green checkmark)
+→ Restart worker service
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Questions? Check the docs in your repo:
+- START_HERE_RAILWAY.md
+- RAILWAY_QUICK_START.md
+- RAILWAY_DEPLOYMENT.md
+
+Good luck! Your bot should be live now. 🎉
