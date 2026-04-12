@@ -1,10 +1,11 @@
 const axios = require('axios');
 const crypto = require('crypto');
+const path = require('path');
 const { FinlightApi } = require('finlight-client');
 const { Bot } = require('grammy');
 const { autoRetry } = require('@grammyjs/auto-retry');
 const Redis = require('ioredis');
-require('dotenv').config();
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 // ===== CONFIG =====
 const FINLIGHT_KEY = process.env.FINLIGHT_API_KEY;
@@ -13,6 +14,21 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
+// Validate required environment variables
+function validateConfig() {
+  const missing = [];
+  if (!FINLIGHT_KEY) missing.push('FINLIGHT_API_KEY');
+  if (!TELEGRAM_TOKEN) missing.push('TELEGRAM_BOT_TOKEN');
+  if (!TELEGRAM_CHAT_ID) missing.push('TELEGRAM_CHAT_ID');
+  if (!GEMINI_API_KEY) missing.push('GEMINI_API_KEY');
+
+  if (missing.length > 0) {
+    console.error(`❌ Missing environment variables: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+}
+validateConfig();
+
 const FINLIGHT_QUERY = 'israel attack missile iran hezbollah hamas gaza idf';
 const DEDUP_WINDOW_SECONDS = 6 * 3600; // 6 hours
 
@@ -20,6 +36,16 @@ const bot = new Bot(TELEGRAM_TOKEN);
 bot.api.config.use(autoRetry());
 
 const redis = new Redis(REDIS_URL);
+
+// Validate Redis connection at startup
+redis.on('error', (error) => {
+  log(`❌ Redis error: ${error.message}`);
+  log('⚠️ Deduplication may not work properly');
+});
+
+redis.on('connect', () => {
+  log('✅ Redis connected');
+});
 
 // ===== DEDUP MANAGEMENT (Redis) =====
 function generateHash(title) {
@@ -44,6 +70,11 @@ async function addToDedup(title) {
 // ===== TRANSLATION (Gemini 2.5 Flash) =====
 async function translateTitle(title) {
   try {
+    if (!GEMINI_API_KEY) {
+      log(`⚠️ Translation skipped: GEMINI_API_KEY not configured`);
+      return title;
+    }
+
     const shortTitle = title.substring(0, 100);
     const response = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
@@ -54,9 +85,21 @@ async function translateTitle(title) {
       },
       { timeout: 10000 }
     );
+
+    if (!response.data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      log(`⚠️ Translation error: Unexpected Gemini response format`);
+      return title;
+    }
+
     return response.data.candidates[0].content.parts[0].text;
   } catch (error) {
-    log(`⚠️ Translation error: ${error.message}`);
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      log(`❌ Translation error: Invalid GEMINI_API_KEY (${error.response.status})`);
+    } else if (error.code === 'ECONNABORTED') {
+      log(`⚠️ Translation timeout: Gemini API took too long (10s)`);
+    } else {
+      log(`⚠️ Translation error: ${error.message}`);
+    }
     return title;
   }
 }
@@ -71,7 +114,9 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
-async function sendAlert(article) {
+async function sendAlert(article, retries = 0) {
+  const MAX_RETRIES = 3;
+
   try {
     const hebrewTitle = await translateTitle(article.title);
     await addToDedup(article.title);
@@ -92,7 +137,19 @@ async function sendAlert(article) {
 
     log(`✅ Alert sent: ${hebrewTitle.substring(0, 40)}...`);
   } catch (error) {
-    log(`❌ Send error: ${error.message}`);
+    // Check if it's a rate limit error
+    if (error.message?.includes('429') || error.message?.includes('Too Many Requests')) {
+      if (retries < MAX_RETRIES) {
+        const waitTime = Math.min(2000 * Math.pow(2, retries), 30000); // exponential backoff, max 30s
+        log(`⏳ Rate limited, retrying in ${waitTime}ms (attempt ${retries + 1}/${MAX_RETRIES})`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        return sendAlert(article, retries + 1);
+      } else {
+        log(`❌ Rate limit exceeded after ${MAX_RETRIES} retries: ${article.title.substring(0, 40)}...`);
+      }
+    } else {
+      log(`❌ Send error: ${error.message}`);
+    }
   }
 }
 

@@ -19,8 +19,7 @@ from datetime import datetime
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import redis.asyncio as aioredis
 
@@ -33,6 +32,7 @@ BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
 SESSION_STRING = os.getenv('TELEGRAM_SESSION_STRING', '')
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 
 BOT_API_URL = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
 
@@ -61,7 +61,12 @@ DEDUP_WINDOW = 6 * 3600  # 6 hours
 def log(message):
     """Log with timestamp"""
     ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    print(f'[{ts}] {message}')
+    try:
+        print(f'[{ts}] {message}')
+    except UnicodeEncodeError:
+        # Fallback for Windows console encoding issues
+        safe_message = message.encode('ascii', 'replace').decode('ascii')
+        print(f'[{ts}] {safe_message}')
 
 def compute_message_hash(text: str) -> str:
     """Compute hash of message content - normalize whitespace and lowercase"""
@@ -91,19 +96,34 @@ def matches_keywords(text: str) -> bool:
 async def translate_with_gemini(text: str) -> str:
     """Translate text to Hebrew using Gemini 2.5 Flash"""
     try:
-        client = genai.Client()  # reads GEMINI_API_KEY from env automatically
+        if not GEMINI_API_KEY:
+            log(f'⚠️ Translation skipped: GEMINI_API_KEY not configured')
+            return text
 
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=f"תרגם את הטקסט הזה לעברית תקנית. רק התרגום, בלי הוספות:\n\n{text[:1000]}",
-            config=types.GenerateContentConfig(
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel('gemini-2.5-flash')
+
+        response = model.generate_content(
+            f"תרגם את הטקסט הזה לעברית תקנית. רק התרגום, בלי הוספות:\n\n{text[:1000]}",
+            generation_config=genai.types.GenerationConfig(
                 max_output_tokens=500,
                 temperature=0.2
             )
         )
+
+        if not response.text:
+            log(f'⚠️ Translation error: Unexpected Gemini response format')
+            return text
+
         return response.text
     except Exception as error:
-        log(f'⚠️ Translation error: {error}')
+        error_str = str(error).lower()
+        if 'api' in error_str and 'key' in error_str:
+            log(f'❌ Translation error: Invalid GEMINI_API_KEY')
+        elif 'unauthorized' in error_str or '401' in error_str or '403' in error_str:
+            log(f'❌ Translation error: Invalid GEMINI_API_KEY (auth failed)')
+        else:
+            log(f'⚠️ Translation error: {error}')
         return text
 
 @retry(
@@ -154,6 +174,9 @@ async def main():
         log('❌ ERROR: TELEGRAM_SESSION_STRING not set')
         log('Generate it locally with: python generate_session.py')
         return
+
+    if not GEMINI_API_KEY:
+        log('⚠️  WARNING: GEMINI_API_KEY not set - translations will be skipped')
 
     # Connect to Redis
     try:

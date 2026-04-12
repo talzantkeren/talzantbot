@@ -1,2 +1,2 @@
-web: node bot.js
-worker: python3 monitor.py
+web: cd node-bot && node bot.js
+worker: python3 python-monitor/monitor.py
